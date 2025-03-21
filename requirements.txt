@@ -1,6 +1,6 @@
 --extra-index-url https://myhloli.github.io/wheels/
 
-magic-pdf[full]
+magic-pdf[full]==1.2.2
 
 fastapi
 uvicorn
