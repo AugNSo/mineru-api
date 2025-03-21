@@ -1,7 +1,6 @@
 from rq import Queue, Worker
 from rq.command import send_shutdown_command
 from redis import Redis
-import magic_pdf
 import argparse
 
 # Initialize Redis and RQ
@@ -22,8 +21,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
-    magic_pdf
     if args.action == "work":
         worker.work()
     elif args.action == "shutdown":
