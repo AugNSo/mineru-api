@@ -1,0 +1,10 @@
+# log
+*.log
+
+# development
+__pycache__/
+.venv/
+
+# temp
+output
+temp_uploads
