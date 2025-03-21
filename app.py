@@ -4,6 +4,8 @@ from rq.job import Job
 from redis import Redis
 import os
 import uvicorn
+import argparse
+import signal
 from pydantic import BaseModel
 import uuid
 from task_processor import process_pdf, process_image
@@ -84,5 +86,84 @@ async def get_task_status(task_id: str):
     return {"task_id": task_id, "status": status, "result": result}
 
 
+# Server lifecycle management
+server = None
+SHUTDOWN_FLAG_FILE = "server_running.pid"
+
+
+def start_server(host="0.0.0.0", port=9721):
+    global server
+
+    # Create pid file to indicate server is running
+    with open(SHUTDOWN_FLAG_FILE, "w") as f:
+        f.write(str(os.getpid()))
+
+    # Register signal handlers
+    signal.signal(signal.SIGINT, lambda sig, frame: shutdown_server())
+    signal.signal(signal.SIGTERM, lambda sig, frame: shutdown_server())
+
+    try:
+        config = uvicorn.Config(app=app, host=host, port=port, lifespan="on")
+        server = uvicorn.Server(config)
+        server.run()
+    finally:
+        # Clean up pid file when server exits
+        if os.path.exists(SHUTDOWN_FLAG_FILE):
+            os.remove(SHUTDOWN_FLAG_FILE)
+
+
+def shutdown_server():
+    global server
+    if server:
+        # Send shutdown signal to the server
+        server.handle_exit(sig=signal.SIGINT, frame=None)
+        print("Server shutdown complete")
+
+        # Clean up pid file
+        if os.path.exists(SHUTDOWN_FLAG_FILE):
+            os.remove(SHUTDOWN_FLAG_FILE)
+    elif os.path.exists(SHUTDOWN_FLAG_FILE):
+        try:
+            # Read PID from file and send SIGTERM to the process
+            with open(SHUTDOWN_FLAG_FILE, "r") as f:
+                pid = int(f.read().strip())
+
+            # Send signal to the running process
+            os.kill(pid, signal.SIGTERM)
+            print(f"Shutdown signal sent to server process (PID: {pid})")
+
+            # Give it a moment to shut down
+            import time
+
+            time.sleep(1)
+
+            # Remove the PID file if it still exists
+            if os.path.exists(SHUTDOWN_FLAG_FILE):
+                os.remove(SHUTDOWN_FLAG_FILE)
+
+        except (ValueError, ProcessLookupError, PermissionError) as e:
+            print(f"Error shutting down server: {e}")
+
+            # Clean up stale PID file
+            if os.path.exists(SHUTDOWN_FLAG_FILE):
+                os.remove(SHUTDOWN_FLAG_FILE)
+    else:
+        print("No server running")
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=9721)
+    parser = argparse.ArgumentParser(description="Mineru API Server")
+    parser.add_argument(
+        "action", choices=["start", "shutdown"], help="Start or shutdown the server"
+    )
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind")
+    parser.add_argument("--port", type=int, default=9721, help="Port to bind")
+
+    args = parser.parse_args()
+
+    if args.action == "start":
+        print(f"Starting server on {args.host}:{args.port}")
+        start_server(host=args.host, port=args.port)
+    elif args.action == "shutdown":
+        print("Shutting down server")
+        shutdown_server()
