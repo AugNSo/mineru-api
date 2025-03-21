@@ -1,5 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Security, status
-from fastapi.security import APIKeyHeader
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from rq import Queue
 from rq.job import Job
 from redis import Redis
@@ -10,8 +9,6 @@ import uuid
 from task_processor import process_pdf, process_image
 import signal
 import sys
-import secrets
-from functools import lru_cache
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -27,32 +24,6 @@ high_queue = Queue("mineru_high", connection=redis, default_timeout=60)
 # Create temporary directory for file processing
 TEMP_DIR = "temp_uploads"
 os.makedirs(TEMP_DIR, exist_ok=True)
-
-
-# Generate admin API key on startup if it doesn't exist
-@lru_cache()
-def get_admin_api_key():
-    # Use environment variable if set, otherwise generate a new key
-    admin_key = os.environ.get("ADMIN_API_KEY")
-    if not admin_key:
-        admin_key = secrets.token_urlsafe(32)
-        print(f"Generated Admin API Key: {admin_key}")
-        print("Store this securely! You can also set it via ADMIN_API_KEY environment variable.")
-    return admin_key
-
-
-# API key security
-api_key_header = APIKeyHeader(name="X-Admin-API-Key", auto_error=False)
-
-
-async def verify_admin_api_key(api_key: str = Security(api_key_header)):
-    if api_key != get_admin_api_key():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API Key",
-        )
-    return api_key
-
 
 class TaskResponse(BaseModel):
     task_id: str
@@ -109,8 +80,8 @@ async def upload_image(file: UploadFile = File(...), priority: str = "default"):
 async def get_task_status(task_id: str):
     try:
         job = Job.fetch(str(task_id), connection=redis)
-    except Exception as e:
-        raise HTTPException(404, detail='No job found with this ID. Perhaps it has expired?')
+    except Exception:
+        raise HTTPException(404, detail='No job found.')
 
     status = job.get_status()
     result = job.result if status == "finished" else None
@@ -119,13 +90,13 @@ async def get_task_status(task_id: str):
 
 
 # Admin endpoint for shutdown
-@app.post("/admin/shutdown", response_model=ShutdownResponse, dependencies=[Depends(verify_admin_api_key)])
+@app.post("/shutdown", response_model=ShutdownResponse)
 async def shutdown_server():
     # This will trigger the shutdown process
     if hasattr(app, "shutdown_handler") and app.shutdown_handler.server:
         # Schedule the shutdown to happen after response is sent
         app.shutdown_handler.schedule_shutdown()
-        return ShutdownResponse(message="Server shutdown initiated. Server will stop after completing current requests.")
+        return ShutdownResponse(message="Server shutdown initiated.")
     else:
         raise HTTPException(500, detail="Shutdown handler not properly configured")
 
@@ -160,7 +131,6 @@ class GracefulShutdown:
         # Wait a moment to let current request finish
         time.sleep(1)
         if self.server:
-            print("Shutting down Uvicorn server...")
             self.server.should_exit = True
         else:
             print("No server instance available, exiting immediately...")
@@ -168,25 +138,6 @@ class GracefulShutdown:
     
     def set_server(self, server):
         self.server = server
-
-
-# Startup and shutdown events
-@app.on_event("startup")
-async def startup_event():
-    print("Starting up application...")
-    # Initialize admin API key
-    get_admin_api_key()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    print("Shutting down application...")
-    # Close Redis connection
-    redis.close()
-    # Clean up temporary files if needed
-    # This is optional, you might want to keep them for debugging
-    # import shutil
-    # shutil.rmtree(TEMP_DIR, ignore_errors=True)
 
 
 if __name__ == "__main__":
