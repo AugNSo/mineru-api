@@ -1,6 +1,9 @@
 # log
 *.log
 
+# env
+.env
+
 # development
 __pycache__/
 .venv/

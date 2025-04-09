@@ -1,13 +1,22 @@
 from rq import Queue, Worker
 from rq.command import send_shutdown_command
 from redis import Redis
+from dotenv import dotenv_values
 import argparse
+
+# Load environment variables
+config = dotenv_values(".env")
 
 # Initialize Redis and RQ
 redis = Redis(
-    host="localhost", port=6379, db=0, retry_on_timeout=True, socket_keepalive=True
+    host=config["REDIS_HOST"],
+    port=config["REDIS_PORT"],
+    password=config["REDIS_PASSWORD"],
+    db=config["REDIS_DB"],
+    retry_on_timeout=True,
+    socket_keepalive=True,
 )
-default_queue = Queue('mineru_default', connection=redis, default_timeout=600)
+default_queue = Queue("mineru_default", connection=redis, default_timeout=600)
 high_queue = Queue("mineru_high", connection=redis, default_timeout=60)
 worker = Worker([high_queue, default_queue], connection=redis)
 
