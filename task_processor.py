@@ -28,9 +28,10 @@ def process_pdf(file_path: str) -> str:
             pipe_result = infer_result.pipe_txt_mode(image_writer)
 
         md_content = pipe_result.get_markdown(image_dir)
-        middle_json = pipe_result.get_middle_json()
+        # middle_json = pipe_result.get_middle_json()
 
-        return {"markdown":md_content, "middle_json":middle_json}
+        return {"markdown":md_content}
+        # return {"markdown":md_content, "middle_json":middle_json}
 
     finally:
         if os.path.exists(file_path):
@@ -48,9 +49,10 @@ def process_image(file_path: str) -> str:
         pipe_result = ds.apply(doc_analyze, ocr=True).pipe_ocr_mode(image_writer)
 
         md_content = pipe_result.get_markdown(image_dir)
-        middle_json = pipe_result.get_middle_json()
+        # middle_json = pipe_result.get_middle_json()
 
-        return {"markdown":md_content, "middle_json":middle_json}
+        return {"markdown":md_content}
+        # return {"markdown":md_content, "middle_json":middle_json}
 
     finally:
         if os.path.exists(file_path):
